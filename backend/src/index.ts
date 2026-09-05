@@ -94,8 +94,9 @@ app.get("/", (_req: Request, res: Response) => {
   });
 });
 
-// 7. Base API Router with Anonymous Session Resolution
+// 7. Base API Router with Anonymous Session Resolution (supports both /api/* and root /* routes)
 app.use("/api", sessionMiddleware, apiRouter);
+app.use(sessionMiddleware, apiRouter);
 
 // 8. 404 Handler for Unmatched Routes
 app.use(notFoundHandler);

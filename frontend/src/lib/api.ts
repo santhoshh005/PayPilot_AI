@@ -24,8 +24,11 @@ import {
 
 const SESSION_STORAGE_KEY = "paypilot_session_id";
 
-// Base URL defaults to /api (handled by Vite development proxy or production host)
-const baseURL = import.meta.env.VITE_API_URL || "/api";
+// Normalize Base URL: ensure /api prefix is present whether user configured base or /api URL
+const rawUrl = (import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
+const baseURL = rawUrl
+  ? (rawUrl.endsWith("/api") ? rawUrl : `${rawUrl}/api`)
+  : "/api";
 
 export const apiClient = axios.create({
   baseURL,
