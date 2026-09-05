@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "test": "vitest run --pool=forks --testTimeout=30000 --fileParallelism=false",
     "test:watch": "vitest",
-    "seed": "npx tsx ../prisma/seed.ts"
+    "seed": "node dist/seed.js"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
