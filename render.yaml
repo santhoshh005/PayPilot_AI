@@ -16,6 +16,8 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       # Sensitive variables: configured securely in Render Dashboard (sync: false)
       - key: DATABASE_URL
         sync: false
