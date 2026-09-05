@@ -1,4 +1,4 @@
-﻿# PayPilot AI — Agentic Commerce & Payment Assistant
+# PayPilot AI — Agentic Commerce & Payment Assistant
 
 > **Track 1: AI Growth & Agentic Commerce**  
 > An autonomous conversational commerce platform powered by Google Gemini, PostgreSQL (Supabase), Express/TypeScript, React/Vite, and Razorpay Standard Checkout & Webhooks.
@@ -8,6 +8,19 @@
 ## 🌟 Overview
 
 **PayPilot AI** transforms traditional e-commerce into an intelligent, interactive shopping experience. Customers discover products via natural conversation, compare technical specs side-by-side, manage cart items dynamically, and complete real-time checkout through Razorpay Standard Checkout with cryptographic HMAC-SHA256 server verification and asynchronous webhook lifecycle handling.
+
+---
+
+## 🌐 Live Production Deployment
+
+| Component | Provider | Live URL / Status |
+|---|---|---|
+| **Frontend Application** | **Vercel** | [https://paypilot-ai-two.vercel.app](https://paypilot-ai-two.vercel.app) |
+| **Backend Web Service** | **Render** | [https://paypilot-backend-mhpm.onrender.com](https://paypilot-backend-mhpm.onrender.com) |
+| **Health Check API** | **Render** | [`GET /api/health`](https://paypilot-backend-mhpm.onrender.com/api/health) (Status: `connected`) |
+| **Database** | **Supabase** | PostgreSQL 17 (Pooler `port 6543`, Direct `port 5432`) |
+| **AI Intelligence** | **Google Gemini** | `gemini-2.5-flash` with Function Calling |
+| **Payment Gateway** | **Razorpay** | Standard Checkout (Test Mode) & HMAC-SHA256 Webhooks |
 
 ---
 
