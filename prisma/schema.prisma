@@ -1,0 +1,170 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator backendClient {
+  provider = "prisma-client-js"
+  output   = "../backend/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── SESSION (Anonymous User) ───────────────────────────────
+
+model Session {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cart          Cart?
+  orders        Order[]
+  conversations Conversation[]
+
+  @@map("sessions")
+}
+
+// ─── PRODUCT CATALOG ────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  brand       String
+  category    String
+  price       Decimal  @db.Decimal(10, 2)
+  description String
+  imageUrl    String   @map("image_url")
+  specs       Json     // PostgreSQL JSONB — key-value specifications
+  features    String[] // PostgreSQL text array
+  rating      Decimal  @default(4.0) @db.Decimal(2, 1)
+  inStock     Boolean  @default(true) @map("in_stock")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([category])
+  @@index([brand])
+  @@index([price])
+  @@map("products")
+}
+
+// ─── CART ───────────────────────────────────────────────────
+
+model Cart {
+  id        String   @id @default(uuid())
+  sessionId String   @unique @map("session_id")
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(uuid())
+  cartId    String  @map("cart_id")
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+// ─── ORDERS & PAYMENTS ─────────────────────────────────────
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Order {
+  id                String      @id @default(uuid())
+  sessionId         String      @map("session_id")
+  session           Session     @relation(fields: [sessionId], references: [id])
+  totalAmount       Decimal     @db.Decimal(10, 2) @map("total_amount")
+  status            OrderStatus @default(PENDING)
+  razorpayOrderId   String?     @unique @map("razorpay_order_id")
+  razorpayPaymentId String?     @map("razorpay_payment_id")
+  paidAt            DateTime?   @map("paid_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  items         OrderItem[]
+  webhookEvents WebhookEvent[]
+
+  @@index([sessionId])
+  @@index([status])
+  @@index([razorpayOrderId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal @db.Decimal(10, 2) // Snapshot of price at time of order
+
+  @@map("order_items")
+}
+
+// ─── WEBHOOKS ──────────────────────────────────────────────
+
+model WebhookEvent {
+  id              String   @id @default(uuid())
+  razorpayEventId String   @unique @map("razorpay_event_id")
+  eventType       String   @map("event_type")
+  orderId         String?  @map("order_id")
+  order           Order?   @relation(fields: [orderId], references: [id])
+  payload         Json
+  processedAt     DateTime @default(now()) @map("processed_at")
+
+  @@index([eventType])
+  @@map("webhook_events")
+}
+
+// ─── CONVERSATIONS & MESSAGES ──────────────────────────────
+
+model Conversation {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  messages Message[]
+
+  @@index([sessionId])
+  @@map("conversations")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  toolCalls      Json?        @map("tool_calls")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@map("messages")
+}

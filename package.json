@@ -1,0 +1,39 @@
+{
+  "name": "paypilot-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PayPilot AI — Agentic Commerce & Payment Assistant for Razorpay AI Builder 2026",
+  "scripts": {
+    "dev": "npm run dev:backend & npm run dev:frontend",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend run test",
+    "prisma:generate": "npx prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
+    "prisma:seed": "npm --prefix backend run seed",
+    "prisma:studio": "npx prisma studio"
+  },
+  "keywords": [
+    "razorpay",
+    "ai-agent",
+    "agentic-commerce",
+    "gemini",
+    "react",
+    "express",
+    "prisma",
+    "fintech"
+  ],
+  "author": "",
+  "license": "MIT",
+  "prisma": {
+    "seed": "npx --prefix backend tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3"
+  }
+}
