@@ -426,11 +426,11 @@ const products = [
 async function main() {
   console.log("🌱 Starting PayPilot AI Product Catalog Seeding...");
 
-  // Clean existing products to ensure fresh, deterministic seed data
-  console.log("🧹 Cleaning existing cart items, order items, and products...");
-  await prisma.cartItem.deleteMany({});
-  await prisma.orderItem.deleteMany({});
-  await prisma.product.deleteMany({});
+  const existingCount = await prisma.product.count();
+  if (existingCount > 0) {
+    console.log(`ℹ️ Catalog already contains ${existingCount} products. Skipping seed to preserve data.`);
+    return;
+  }
 
   console.log(`📦 Seeding ${products.length} products across 5 categories...`);
 
