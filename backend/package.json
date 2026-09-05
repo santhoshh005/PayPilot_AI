@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "test": "vitest run --pool=forks --testTimeout=30000 --fileParallelism=false",
     "test:watch": "vitest",
-    "seed": "tsx ../prisma/seed.ts"
+    "seed": "npx tsx ../prisma/seed.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
@@ -18,7 +18,10 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "prisma": "^6.4.1",
     "razorpay": "^2.9.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -26,10 +29,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.5",
     "@types/supertest": "^6.0.2",
-    "prisma": "^6.4.1",
     "supertest": "^7.0.0",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   },
   "license": "MIT"
