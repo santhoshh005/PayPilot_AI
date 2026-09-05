@@ -37,7 +37,11 @@ app.use(
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
       const normalizedOrigin = origin.replace(/\/$/, "");
-      if (allowedOrigins.has(normalizedOrigin)) {
+      if (
+        allowedOrigins.has(normalizedOrigin) ||
+        /^https:\/\/[a-zA-Z0-9-]+-santhoshh005s-projects\.vercel\.app$/.test(normalizedOrigin) ||
+        /^https:\/\/paypilot[a-zA-Z0-9-]*\.vercel\.app$/.test(normalizedOrigin)
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`CORS policy does not allow access from ${origin}`));
