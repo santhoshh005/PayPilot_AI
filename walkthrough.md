@@ -56,3 +56,52 @@ In Phase 14, we prepared PayPilot AI for seamless, production-grade cloud deploy
 
 ### 5. Security & Secret Scan
 - **Result**: 0 secrets exposed in client bundles or version-controlled files.
+
+---
+
+# Phase 15 Walkthrough — Production Deployment & Live E2E Verification
+
+## Summary of Live Production Environment
+
+PayPilot AI is fully deployed, verified, and running live across all cloud services:
+
+| Service | Provider | Live URL / Identifier | Status |
+|---|---|---|---|
+| **Frontend SPA** | **Vercel** | [https://paypilot-ai-two.vercel.app](https://paypilot-ai-two.vercel.app) | **Online & Active** |
+| **Backend API** | **Render** | [https://paypilot-backend-mhpm.onrender.com](https://paypilot-backend-mhpm.onrender.com) | **Online & Active** |
+| **Health Check** | **Render** | [`/api/health`](https://paypilot-backend-mhpm.onrender.com/api/health) | `{"status":"ok","database":"connected"}` |
+| **Database** | **Supabase** | `aws-0-ap-northeast-1` (PostgreSQL 17) | **Migrated & Seeded (21 Products)** |
+| **AI Agent** | **Google Gemini** | `gemini-2.5-flash` | **Live Function Calling Verified** |
+| **Payments** | **Razorpay** | Standard Checkout & HMAC Verification | **Verified Live in Test Mode** |
+
+---
+
+## Live Verification Milestones
+
+1. **Database & Schema**:
+   - Supabase PostgreSQL schema initialized via `npx prisma migrate deploy`.
+   - Idempotent seed script populated 21 products across 5 categories (Smartphones, Laptops, Wireless Earbuds, Headphones, Smartwatches).
+
+2. **Backend API & Health**:
+   - Render Web Service booted with zero vulnerabilities.
+   - `GET /api/health` confirmed live database connection with HTTP 200 OK.
+   - Dual-mount routing supports both `/api/*` and direct `/*` paths.
+
+3. **Frontend Application**:
+   - Vercel React 18 + Vite SPA deployed with client-side SPA routing (`vercel.json`).
+   - Code-split bundles (`vendor`, `charts`, `icons`) with 0 vulnerabilities and 0 build warnings.
+
+4. **Live Conversational Commerce & Checkout**:
+   - Tested natural-language query: *"Show me earbuds under ₹2500 with at least 30 hours battery"*.
+   - Gemini autonomously triggered `search_products` and returned the exact 4 catalog matches.
+   - Executed live test checkout via Razorpay Standard Checkout modal.
+   - Server verified HMAC-SHA256 signature and transitioned order `PENDING` ➔ `PAID`.
+   - Confirmed `order_TYJmQfp76MbwTP` marked `PAID` with payment ID `pay_TYJmXup8izzkGu` for ₹69,900.
+
+5. **Growth Dashboard Analytics**:
+   - `/api/dashboard/summary?range=30d` live aggregation confirmed:
+     - Gross Revenue: **₹69,900**
+     - Paid Orders: **1**
+     - Items Sold: **1** (Apple iPhone 15)
+     - Interactive sales trend reflects live purchases in real time.
+

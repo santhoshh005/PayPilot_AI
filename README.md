@@ -111,7 +111,7 @@ Razorpay/
 |---|---|---|
 | `PORT` | Backend listening port | `10000` (Render default) or `3001` (local) |
 | `NODE_ENV` | Environment mode | `production` / `development` / `test` |
-| `FRONTEND_URL` | Allowed CORS origin (Vercel URL or local) | `https://paypilot-ai.vercel.app` |
+| `FRONTEND_URL` | Allowed CORS origin (Vercel URL or local) | `https://paypilot-ai-two.vercel.app` |
 | `DATABASE_URL` | Supabase connection pooler URL (Port 6543) | `postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true` |
 | `DIRECT_URL` | Supabase direct PostgreSQL URL (Port 5432) | `postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:5432/postgres` |
 | `GEMINI_API_KEY` | Google AI Studio API Key | `AIzaSy...` |
@@ -126,7 +126,7 @@ Razorpay/
 
 | Variable | Description | Example |
 |---|---|---|
-| `VITE_API_URL` | Backend URL (no trailing slash) | `https://paypilot-backend.onrender.com` |
+| `VITE_API_URL` | Backend URL (no trailing slash) | `https://paypilot-backend-mhpm.onrender.com` |
 | `VITE_RAZORPAY_KEY_ID` | Public Razorpay Key ID | `rzp_test_...` |
 
 ---
