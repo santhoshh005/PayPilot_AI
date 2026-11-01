@@ -125,46 +125,17 @@ export async function executeToolCall(
           };
         }
 
-        const rawProducts = await prisma.product.findMany({
-          where: {
-            id: { in: parsed.data.productIds },
-          },
-        });
+        const formatted = await productService.getProductsByIds(parsed.data.productIds);
 
-        if (rawProducts.length < 2) {
+        if (formatted.length < 2) {
           return {
             toolName: name,
             success: false,
             result: {
-              error: `Could only find ${rawProducts.length} matching products for comparison. At least 2 are required.`,
+              error: `Could only find ${formatted.length} matching products for comparison. At least 2 are required.`,
             },
           };
         }
-
-        const formatted = rawProducts.map((p) => {
-          const specsObj =
-            typeof p.specs === "object" && p.specs !== null && !Array.isArray(p.specs)
-              ? (p.specs as Record<string, unknown>)
-              : {};
-          return {
-            id: p.id,
-            name: p.name,
-            brand: p.brand,
-            category: p.category,
-            price: Number(p.price),
-            description: p.description,
-            imageUrl: p.imageUrl,
-            specs: specsObj,
-            features: p.features || [],
-            rating: Number(p.rating),
-            inStock: p.inStock,
-            batteryHours:
-              typeof specsObj.batteryLifeHours === "number"
-                ? specsObj.batteryLifeHours
-                : undefined,
-            createdAt: p.createdAt,
-          };
-        });
 
         // Preserve exact requested productIds order (e.g. product 1 first, product 2 second)
         const idOrderMap = new Map(

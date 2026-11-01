@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import agentService, { AgentChatResponse } from "../services/agentService.js";
+import agentService, { AgentChatResponse, getInMemoryHistory } from "../services/agentService.js";
 import prisma from "../lib/prisma.js";
 import { ChatMessageBody } from "../schemas/chat.js";
 import { ApiResponse } from "../types/index.js";
@@ -87,7 +87,18 @@ export class ChatController {
         },
       });
     } catch (error) {
-      next(error);
+      console.warn(
+        "[ChatController] Database error in getHistory, using in-memory store:",
+        (error as Error).message
+      );
+      const fallback = getInMemoryHistory(
+        req.sessionId,
+        req.query.conversationId as string | undefined
+      );
+      res.status(200).json({
+        success: true,
+        data: fallback,
+      });
     }
   }
 }

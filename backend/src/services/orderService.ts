@@ -55,68 +55,84 @@ export class OrderService {
   ): Promise<OrderListResult> {
     const page = query.page || 1;
     const limit = query.limit || 10;
-    const skip = (page - 1) * limit;
+    try {
+      const skip = (page - 1) * limit;
 
-    const where: Prisma.OrderWhereInput = {
-      sessionId,
-      ...(query.status ? { status: query.status } : {}),
-    };
+      const where: Prisma.OrderWhereInput = {
+        sessionId,
+        ...(query.status ? { status: query.status } : {}),
+      };
 
-    // Execute count and paginated query in parallel
-    const [total, orders] = await Promise.all([
-      prisma.order.count({ where }),
-      prisma.order.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-        include: {
-          items: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  brand: true,
-                  category: true,
-                  imageUrl: true,
+      // Execute count and paginated query in parallel
+      const [total, orders] = await Promise.all([
+        prisma.order.count({ where }),
+        prisma.order.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: limit,
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    brand: true,
+                    category: true,
+                    imageUrl: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
 
-    const totalPages = Math.ceil(total / limit) || 1;
+      const totalPages = Math.ceil(total / limit) || 1;
 
-    const formattedOrders: OrderSummaryDto[] = orders.map((order) => {
-      const items = this.formatOrderItems(order.items);
-      const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+      const formattedOrders: OrderSummaryDto[] = orders.map((order) => {
+        const items = this.formatOrderItems(order.items);
+        const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+        return {
+          id: order.id,
+          razorpayOrderId: order.razorpayOrderId,
+          razorpayPaymentId: order.razorpayPaymentId,
+          status: order.status,
+          totalAmount: Number(order.totalAmount),
+          currency: "INR",
+          itemCount,
+          createdAt: order.createdAt.toISOString(),
+          paidAt: order.paidAt ? order.paidAt.toISOString() : null,
+          items,
+        };
+      });
 
       return {
-        id: order.id,
-        razorpayOrderId: order.razorpayOrderId,
-        razorpayPaymentId: order.razorpayPaymentId,
-        status: order.status,
-        totalAmount: Number(order.totalAmount),
-        currency: "INR",
-        itemCount,
-        createdAt: order.createdAt.toISOString(),
-        paidAt: order.paidAt ? order.paidAt.toISOString() : null,
-        items,
+        orders: formattedOrders,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+        },
       };
-    });
-
-    return {
-      orders: formattedOrders,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-      },
-    };
+    } catch (error) {
+      console.warn(
+        "[OrderService] Database error on listOrders, returning empty list:",
+        (error as Error).message
+      );
+      return {
+        orders: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+      };
+    }
   }
 
   /**

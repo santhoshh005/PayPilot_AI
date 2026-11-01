@@ -2,6 +2,12 @@ import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma.js";
 import { ListProductsQuery } from "../schemas/product.js";
 import { NotFoundError } from "../utils/errors.js";
+import {
+  getFallbackProducts,
+  getFallbackProductById,
+  getFallbackProductsByIds,
+  getFallbackCategories,
+} from "../data/fallbackProducts.js";
 
 export interface FormattedProduct {
   id: string;
@@ -76,144 +82,207 @@ function formatProduct(p: {
 export class ProductService {
   /**
    * Retrieves a paginated and filtered list of products.
-   * All filtering and sorting operations are executed at the PostgreSQL database level.
+   * All filtering and sorting operations are executed at the PostgreSQL database level
+   * with automatic in-memory catalog fallback if database is offline.
    */
   async listProducts(query: ListProductsQuery): Promise<ProductListResult> {
-    const {
-      search,
-      category,
-      brand,
-      minPrice,
-      maxPrice,
-      minRating,
-      minBatteryHours,
-      inStock,
-      sort,
-      page,
-      limit,
-    } = query;
-
-    const where: Prisma.ProductWhereInput = {};
-
-    // 1. Text Search across name, brand, category, description
-    if (search && search.trim() !== "") {
-      const term = search.trim();
-      where.OR = [
-        { name: { contains: term, mode: "insensitive" } },
-        { brand: { contains: term, mode: "insensitive" } },
-        { category: { contains: term, mode: "insensitive" } },
-        { description: { contains: term, mode: "insensitive" } },
-      ];
-    }
-
-    // 2. Category Filter
-    if (category && category.trim() !== "") {
-      where.category = { equals: category.trim(), mode: "insensitive" };
-    }
-
-    // 3. Brand Filter
-    if (brand && brand.trim() !== "") {
-      where.brand = { equals: brand.trim(), mode: "insensitive" };
-    }
-
-    // 4. Price Range Filter
-    if (minPrice !== undefined || maxPrice !== undefined) {
-      where.price = {};
-      if (minPrice !== undefined) {
-        where.price.gte = minPrice;
-      }
-      if (maxPrice !== undefined) {
-        where.price.lte = maxPrice;
-      }
-    }
-
-    // 5. Minimum Rating Filter
-    if (minRating !== undefined) {
-      where.rating = { gte: minRating };
-    }
-
-    // 6. In-Stock Filter
-    if (inStock !== undefined) {
-      where.inStock = inStock;
-    }
-
-    // 7. Battery Life Filter (Database JSONB path query)
-    if (minBatteryHours !== undefined) {
-      where.specs = {
-        path: ["batteryLifeHours"],
-        gte: minBatteryHours,
-      };
-    }
-
-    // 8. Safe OrderBy Mapping from Allowlist
-    const sortAllowlist: Record<
-      string,
-      Prisma.ProductOrderByWithRelationInput
-    > = {
-      price_asc: { price: "asc" },
-      price_desc: { price: "desc" },
-      rating_desc: { rating: "desc" },
-      name_asc: { name: "asc" },
-    };
-
-    const orderBy = sortAllowlist[sort] || { rating: "desc" };
-
-    const skip = (page - 1) * limit;
-    const take = limit;
-
-    // Execute count and item queries atomically
-    const [total, rawProducts] = await prisma.$transaction([
-      prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        orderBy,
-        skip,
-        take,
-      }),
-    ]);
-
-    const totalPages = Math.ceil(total / limit) || 1;
-
-    return {
-      items: rawProducts.map(formatProduct),
-      pagination: {
+    try {
+      const {
+        search,
+        category,
+        brand,
+        minPrice,
+        maxPrice,
+        minRating,
+        minBatteryHours,
+        inStock,
+        sort,
         page,
         limit,
-        total,
-        totalPages,
-      },
-    };
+      } = query;
+
+      const where: Prisma.ProductWhereInput = {};
+
+      // 1. Text Search across name, brand, category, description
+      if (search && search.trim() !== "") {
+        const term = search.trim();
+        where.OR = [
+          { name: { contains: term, mode: "insensitive" } },
+          { brand: { contains: term, mode: "insensitive" } },
+          { category: { contains: term, mode: "insensitive" } },
+          { description: { contains: term, mode: "insensitive" } },
+        ];
+      }
+
+      // 2. Category Filter
+      if (category && category.trim() !== "") {
+        where.category = { equals: category.trim(), mode: "insensitive" };
+      }
+
+      // 3. Brand Filter
+      if (brand && brand.trim() !== "") {
+        where.brand = { equals: brand.trim(), mode: "insensitive" };
+      }
+
+      // 4. Price Range Filter
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        where.price = {};
+        if (minPrice !== undefined) {
+          where.price.gte = minPrice;
+        }
+        if (maxPrice !== undefined) {
+          where.price.lte = maxPrice;
+        }
+      }
+
+      // 5. Minimum Rating Filter
+      if (minRating !== undefined) {
+        where.rating = { gte: minRating };
+      }
+
+      // 6. In-Stock Filter
+      if (inStock !== undefined) {
+        where.inStock = inStock;
+      }
+
+      // 7. Battery Life Filter (Database JSONB path query)
+      if (minBatteryHours !== undefined) {
+        where.specs = {
+          path: ["batteryLifeHours"],
+          gte: minBatteryHours,
+        };
+      }
+
+      // 8. Safe OrderBy Mapping from Allowlist
+      const sortAllowlist: Record<
+        string,
+        Prisma.ProductOrderByWithRelationInput
+      > = {
+        price_asc: { price: "asc" },
+        price_desc: { price: "desc" },
+        rating_desc: { rating: "desc" },
+        name_asc: { name: "asc" },
+      };
+
+      const orderBy = sortAllowlist[sort] || { rating: "desc" };
+
+      const skip = (page - 1) * limit;
+      const take = limit;
+
+      // Execute count and item queries atomically
+      const [total, rawProducts] = await prisma.$transaction([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          orderBy,
+          skip,
+          take,
+        }),
+      ]);
+
+      // If database is empty or returned 0 items while no restrictive filters applied, use fallback
+      if (total === 0 && !search && !category && !brand) {
+        return getFallbackProducts(query);
+      }
+
+      const totalPages = Math.ceil(total / limit) || 1;
+
+      return {
+        items: rawProducts.map(formatProduct),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+        },
+      };
+    } catch (error) {
+      console.warn(
+        "[ProductService] Database unavailable, falling back to in-memory catalog:",
+        (error as Error).message
+      );
+      return getFallbackProducts(query);
+    }
   }
 
   /**
    * Retrieves single product details by unique UUID.
-   * Throws NotFoundError if product does not exist.
+   * Falls back to in-memory catalog if database is offline.
    */
   async getProductById(id: string): Promise<FormattedProduct> {
-    const rawProduct = await prisma.product.findUnique({
-      where: { id },
-    });
+    try {
+      const rawProduct = await prisma.product.findUnique({
+        where: { id },
+      });
 
-    if (!rawProduct) {
-      throw new NotFoundError(`Product with ID "${id}" was not found`);
+      if (rawProduct) {
+        return formatProduct(rawProduct);
+      }
+    } catch (error) {
+      console.warn(
+        `[ProductService] Database query failed for ID "${id}", checking fallback catalog:`,
+        (error as Error).message
+      );
     }
 
-    return formatProduct(rawProduct);
+    const fallback = getFallbackProductById(id);
+    if (fallback) {
+      return fallback;
+    }
+
+    throw new NotFoundError(`Product with ID "${id}" was not found`);
+  }
+
+  /**
+   * Retrieves multiple products by IDs, with fallback support.
+   */
+  async getProductsByIds(ids: string[]): Promise<FormattedProduct[]> {
+    try {
+      const rawProducts = await prisma.product.findMany({
+        where: { id: { in: ids } },
+      });
+
+      if (rawProducts.length > 0) {
+        return rawProducts.map(formatProduct);
+      }
+    } catch (error) {
+      console.warn(
+        "[ProductService] Database query failed for getProductsByIds:",
+        (error as Error).message
+      );
+    }
+
+    return getFallbackProductsByIds(ids);
   }
 
   /**
    * Retrieves available product categories with product counts for filter controls.
    */
   async getCategories(): Promise<Array<{ category: string; count: number }>> {
-    const grouped = await prisma.product.groupBy({
-      by: ["category"],
-      _count: { id: true },
-      orderBy: { category: "asc" },
-    });
+    try {
+      const grouped = await prisma.product.groupBy({
+        by: ["category"],
+        _count: { id: true },
+        orderBy: { category: "asc" },
+      });
 
-    return grouped.map((g) => ({
-      category: g.category,
-      count: g._count.id,
+      if (grouped.length > 0) {
+        return grouped.map((g) => ({
+          category: g.category,
+          count: g._count.id,
+        }));
+      }
+    } catch (error) {
+      console.warn(
+        "[ProductService] Database query failed for getCategories, using fallback catalog:",
+        (error as Error).message
+      );
+    }
+
+    const fallbackCats = getFallbackCategories();
+    return fallbackCats.map((cat) => ({
+      category: cat,
+      count: 4,
     }));
   }
 }

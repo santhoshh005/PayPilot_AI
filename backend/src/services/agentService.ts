@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { Prisma } from "@prisma/client";
+import crypto from "crypto";
 import { env } from "../config/env.js";
 import prisma from "../lib/prisma.js";
 import { FormattedProduct } from "./productService.js";
@@ -25,24 +26,92 @@ interface StoredToolCalls {
   cart?: CartResponse;
 }
 
+interface InMemoryMessageRecord {
+  id: string;
+  conversationId: string;
+  role: "USER" | "ASSISTANT";
+  content: string;
+  toolCalls?: StoredToolCalls;
+  createdAt: Date;
+}
+
+// In-memory conversation & message store when database is unreachable
+const inMemoryConversations = new Map<string, string>(); // sessionId -> conversationId
+const inMemoryMessages = new Map<string, InMemoryMessageRecord[]>(); // conversationId -> messages
+
+/**
+ * Safely persists a message to PostgreSQL with automatic in-memory fallback.
+ */
+async function safeSaveMessage(msg: {
+  conversationId: string;
+  role: "USER" | "ASSISTANT";
+  content: string;
+  toolCalls?: StoredToolCalls;
+}): Promise<void> {
+  try {
+    await prisma.message.create({
+      data: {
+        conversationId: msg.conversationId,
+        role: msg.role,
+        content: msg.content,
+        toolCalls: msg.toolCalls as any,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      "[AgentService] Failed to save message to database, saving in memory:",
+      (err as Error).message
+    );
+  }
+
+  // Always keep in-memory sync for resilience
+  const list = inMemoryMessages.get(msg.conversationId) || [];
+  list.push({
+    id: crypto.randomUUID(),
+    conversationId: msg.conversationId,
+    role: msg.role,
+    content: msg.content,
+    toolCalls: msg.toolCalls,
+    createdAt: new Date(),
+  });
+  inMemoryMessages.set(msg.conversationId, list);
+}
+
 /**
  * Retrieves the most recently active product recommendations or comparison items
- * from the conversation's database message history.
+ * from the conversation's message history (database or in-memory fallback).
  */
 async function getRecentProductContext(conversationId: string): Promise<{
   products: FormattedProduct[];
   comparison: FormattedProduct[];
   cart?: CartResponse;
 }> {
-  const previousAssistantMessages = await prisma.message.findMany({
-    where: {
-      conversationId,
-      role: "ASSISTANT",
-      toolCalls: { not: Prisma.JsonNull },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 6,
-  });
+  let previousAssistantMessages: Array<{ toolCalls?: any }> = [];
+
+  try {
+    previousAssistantMessages = await prisma.message.findMany({
+      where: {
+        conversationId,
+        role: "ASSISTANT",
+        toolCalls: { not: Prisma.JsonNull },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+    });
+  } catch (err) {
+    console.warn(
+      "[AgentService] Database error loading recent messages, using in-memory store:",
+      (err as Error).message
+    );
+  }
+
+  if (previousAssistantMessages.length === 0) {
+    const memList = inMemoryMessages.get(conversationId) || [];
+    previousAssistantMessages = memList
+      .filter((m) => m.role === "ASSISTANT" && m.toolCalls)
+      .reverse()
+      .slice(0, 6);
+  }
 
   let products: FormattedProduct[] = [];
   let comparison: FormattedProduct[] = [];
@@ -91,7 +160,7 @@ export class AgentService {
 
   /**
    * Orchestrates multi-turn conversation with Gemini function calling and cart actions.
-   * Loads context from PostgreSQL, processes tool calls, and persists messages.
+   * Loads context from PostgreSQL (or in-memory), processes tool calls, and persists messages.
    */
   async processMessage(
     sessionId: string,
@@ -99,36 +168,71 @@ export class AgentService {
     conversationId?: string
   ): Promise<AgentChatResponse> {
     // 1. Resolve or create active conversation for this session
-    let conversation = conversationId
-      ? await prisma.conversation.findFirst({
-          where: { id: conversationId, sessionId },
-        })
-      : await prisma.conversation.findFirst({
-          where: { sessionId },
-          orderBy: { createdAt: "desc" },
-        });
+    let activeConversationId = conversationId;
 
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: { sessionId },
-      });
+    try {
+      let conversation = conversationId
+        ? await prisma.conversation.findFirst({
+            where: { id: conversationId, sessionId },
+          })
+        : await prisma.conversation.findFirst({
+            where: { sessionId },
+            orderBy: { createdAt: "desc" },
+          });
+
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: { sessionId },
+        });
+      }
+
+      activeConversationId = conversation.id;
+      inMemoryConversations.set(sessionId, conversation.id);
+    } catch (dbError) {
+      console.warn(
+        "[AgentService] Database offline on conversation resolution, using in-memory:",
+        (dbError as Error).message
+      );
+      if (!activeConversationId) {
+        activeConversationId = inMemoryConversations.get(sessionId) || crypto.randomUUID();
+        inMemoryConversations.set(sessionId, activeConversationId);
+      }
     }
 
-    // 2. Persist incoming User Message
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        role: "USER",
-        content: messageText,
-      },
+    if (!activeConversationId) {
+      activeConversationId = crypto.randomUUID();
+    }
+
+    // 2. Persist incoming User Message safely
+    await safeSaveMessage({
+      conversationId: activeConversationId,
+      role: "USER",
+      content: messageText,
     });
 
     // 3. Load recent conversation history (latest 15 messages)
-    const historyMessages = await prisma.message.findMany({
-      where: { conversationId: conversation.id },
-      orderBy: { createdAt: "asc" },
-      take: 15,
-    });
+    let historyMessages: Array<{
+      role: string;
+      content: string;
+      toolCalls?: any;
+    }> = [];
+
+    try {
+      historyMessages = await prisma.message.findMany({
+        where: { conversationId: activeConversationId },
+        orderBy: { createdAt: "asc" },
+        take: 15,
+      });
+    } catch (err) {
+      console.warn(
+        "[AgentService] Database error loading history, using in-memory:",
+        (err as Error).message
+      );
+    }
+
+    if (historyMessages.length === 0) {
+      historyMessages = (inMemoryMessages.get(activeConversationId) || []).slice(-15);
+    }
 
     // 4. Format contents array for Gemini with structured product and cart references
     const contents: Array<{
@@ -182,7 +286,7 @@ export class AgentService {
     if (!this.aiClient || !env.GEMINI_API_KEY) {
       return this.runDeterministicFallback(
         sessionId,
-        conversation.id,
+        activeConversationId,
         messageText
       );
     }
@@ -275,7 +379,7 @@ export class AgentService {
           "I've processed your request based on our catalog and cart.";
       }
 
-      // 5. Persist Assistant Message with Structured Tool Payload
+      // 5. Persist Assistant Message safely
       const storedPayload: StoredToolCalls = {
         tools: toolsExecuted,
         products: collectedProducts.length > 0 ? collectedProducts : undefined,
@@ -284,18 +388,16 @@ export class AgentService {
         cart: collectedCart,
       };
 
-      await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          role: "ASSISTANT",
-          content: finalAssistantText,
-          toolCalls: storedPayload as any,
-        },
+      await safeSaveMessage({
+        conversationId: activeConversationId,
+        role: "ASSISTANT",
+        content: finalAssistantText,
+        toolCalls: storedPayload,
       });
 
       return {
         message: finalAssistantText,
-        conversationId: conversation.id,
+        conversationId: activeConversationId,
         products: collectedProducts.length > 0 ? collectedProducts : undefined,
         comparison:
           collectedComparison.length > 0 ? collectedComparison : undefined,
@@ -306,7 +408,7 @@ export class AgentService {
       console.error("[AgentService] Gemini call failed, falling back to deterministic resolution:", error);
       return this.runDeterministicFallback(
         sessionId,
-        conversation.id,
+        activeConversationId,
         messageText
       );
     }
@@ -819,7 +921,7 @@ export class AgentService {
         "Hello! I am PayPilot AI, your agentic shopping assistant. Tell me what you're looking for (e.g., 'wireless earbuds under ₹2500 with 30h battery' or 'smartwatches under ₹5000') and I'll find, compare, and add the best options to your cart!";
     }
 
-    // Persist Assistant Message with Structured Tool Payload
+    // Persist Assistant Message safely
     const storedPayload: StoredToolCalls = {
       tools: toolsExecuted,
       products,
@@ -827,13 +929,11 @@ export class AgentService {
       cart,
     };
 
-    await prisma.message.create({
-      data: {
-        conversationId,
-        role: "ASSISTANT",
-        content: replyText,
-        toolCalls: storedPayload as any,
-      },
+    await safeSaveMessage({
+      conversationId,
+      role: "ASSISTANT",
+      content: replyText,
+      toolCalls: storedPayload,
     });
 
     return {
@@ -845,6 +945,21 @@ export class AgentService {
       toolsExecuted,
     };
   }
+}
+
+/**
+ * Helper to fetch in-memory conversation history when database is offline.
+ */
+export function getInMemoryHistory(
+  sessionId: string,
+  conversationId?: string
+): { conversationId: string | null; messages: any[] } {
+  const convId = conversationId || inMemoryConversations.get(sessionId);
+  if (!convId) {
+    return { conversationId: null, messages: [] };
+  }
+  const messages = inMemoryMessages.get(convId) || [];
+  return { conversationId: convId, messages };
 }
 
 export const agentService = new AgentService();

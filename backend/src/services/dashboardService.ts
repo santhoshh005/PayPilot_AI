@@ -11,7 +11,8 @@ export class DashboardService {
    * Scoped to the specified time range ("7d", "30d", or "90d").
    */
   async getSummary(range: "7d" | "30d" | "90d" = "30d"): Promise<DashboardSummaryDto> {
-    const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+    try {
+      const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
 
     // Deterministic start date at 00:00:00 UTC
     const now = new Date();
@@ -152,6 +153,24 @@ export class DashboardService {
       topProducts,
       salesByDay,
     };
+    } catch (error) {
+      console.warn(
+        "[DashboardService] Database unavailable for getSummary, returning fallback zero data:",
+        (error as Error).message
+      );
+      return {
+        range,
+        totalOrders: 0,
+        paidOrders: 0,
+        pendingOrders: 0,
+        failedOrders: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+        totalItemsSold: 0,
+        topProducts: [],
+        salesByDay: [],
+      };
+    }
   }
 }
 
