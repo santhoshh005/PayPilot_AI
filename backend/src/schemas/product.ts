@@ -43,12 +43,12 @@ export const listProductsQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? parseInt(val, 10) : 1))
-    .pipe(z.number().int().min(1, "Page must be 1 or greater").default(1)),
+    .pipe(z.number().int().min(1, "Page must be 1 or greater")),
   limit: z
     .string()
     .optional()
     .transform((val) => (val ? parseInt(val, 10) : 12))
-    .pipe(z.number().int().min(1).max(50, "Maximum limit is 50").default(12)),
+    .pipe(z.number().int().min(1).max(50, "Maximum limit is 50")),
 });
 
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;

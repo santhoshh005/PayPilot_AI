@@ -14,12 +14,12 @@ export const listOrdersQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => (val !== undefined ? parseInt(val, 10) : 1))
-    .pipe(z.number().int().min(1, "Page must be 1 or greater").default(1)),
+    .pipe(z.number().int().min(1, "Page must be 1 or greater")),
   limit: z
     .string()
     .optional()
     .transform((val) => (val !== undefined ? parseInt(val, 10) : 10))
-    .pipe(z.number().int().min(1).max(50, "Maximum limit is 50").default(10)),
+    .pipe(z.number().int().min(1).max(50, "Maximum limit is 50")),
   status: orderStatusSchema.optional(),
 });
 

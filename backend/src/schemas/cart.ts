@@ -6,9 +6,7 @@ import { z } from "zod";
 export const addItemSchema = z.object({
   productId: z.string().uuid("productId must be a valid UUID"),
   quantity: z
-    .number({
-      invalid_type_error: "Quantity must be an integer",
-    })
+    .number()
     .int("Quantity must be an integer")
     .min(1, "Quantity must be at least 1")
     .max(10, "Quantity cannot exceed 10 units per item")
@@ -23,10 +21,7 @@ export type AddItemBody = z.infer<typeof addItemSchema>;
  */
 export const updateItemSchema = z.object({
   quantity: z
-    .number({
-      required_error: "Quantity is required",
-      invalid_type_error: "Quantity must be an integer",
-    })
+    .number()
     .int("Quantity must be an integer")
     .min(1, "Quantity must be at least 1")
     .max(10, "Quantity cannot exceed 10 units per item"),
