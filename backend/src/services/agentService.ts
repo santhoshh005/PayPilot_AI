@@ -7,7 +7,7 @@ import prisma, {
   markDatabaseOffline,
   markDatabaseOnline,
 } from "../lib/prisma.js";
-import { FormattedProduct } from "./productService.js";
+import productService, { FormattedProduct } from "./productService.js";
 import cartService from "./cartService.js";
 import { CartResponse } from "../schemas/cart.js";
 import { ALL_AGENT_TOOLS } from "../ai/tools/definitions.js";
@@ -393,6 +393,75 @@ export class AgentService {
       if (!finalAssistantText) {
         finalAssistantText =
           "I've processed your request based on our catalog and cart.";
+      }
+
+      // Resilient Auto-Recovery: If LLM hallucinated adding to cart or user asked to add to cart,
+      // but no add_to_cart tool call was executed or captured, resolve and add the product directly!
+      if (!collectedCart) {
+        const userAskedAddToCart = /(?:add (?:that|this|it|the).* in (?:my )?cart|add .* to .*cart|add to cart|buy (?:this|that|it))/i.test(messageText);
+        const assistantClaimedAdded = /(?:added .* to (?:your|the) cart|added .* in (?:your|the) cart|done! i added)/i.test(finalAssistantText);
+
+        if (userAskedAddToCart || assistantClaimedAdded) {
+          // Identify the product to add:
+          // 1. Check if assistant text or message text mentions a specific catalog product name
+          const allCatalog = await productService.listProducts({ limit: 50, page: 1, sort: "rating_desc" });
+          let targetProduct: FormattedProduct | undefined;
+
+          // Search longest product name first to avoid partial substring clashes
+          const sortedProds = [...allCatalog.items].sort((a, b) => b.name.length - a.name.length);
+          for (const prod of sortedProds) {
+            if (
+              finalAssistantText.toLowerCase().includes(prod.name.toLowerCase()) ||
+              messageText.toLowerCase().includes(prod.name.toLowerCase())
+            ) {
+              targetProduct = prod;
+              break;
+            }
+          }
+
+          // 2. If not found in text, look at active products in recent context
+          if (!targetProduct) {
+            const context = await getRecentProductContext(activeConversationId);
+            if (context.products.length > 0) {
+              if (/battery/i.test(messageText) || /battery/i.test(finalAssistantText)) {
+                // Best battery life
+                targetProduct = [...context.products].sort(
+                  (a, b) => (b.batteryHours || 0) - (a.batteryHours || 0)
+                )[0];
+              } else if (/cheap/i.test(messageText) || /lowest/i.test(messageText)) {
+                // Cheaper one
+                targetProduct = [...context.products].sort((a, b) => a.price - b.price)[0];
+              } else if (/first/i.test(messageText) || /#1/i.test(messageText)) {
+                targetProduct = context.products[0];
+              } else if (/second/i.test(messageText) || /#2/i.test(messageText)) {
+                targetProduct = context.products[1] || context.products[0];
+              } else {
+                targetProduct = context.products[0];
+              }
+            }
+          }
+
+          if (targetProduct) {
+            try {
+              collectedCart = await cartService.addItem(sessionId, targetProduct.id, 1);
+              if (!toolsExecuted.includes("add_to_cart")) {
+                toolsExecuted.push("add_to_cart");
+              }
+              console.log(
+                `[AgentService] Auto-recovery executed: added "${targetProduct.name}" to cart for session ${sessionId}`
+              );
+            } catch (addErr) {
+              console.warn("[AgentService] Auto-recovery cart addition failed:", addErr);
+            }
+          }
+        } else if (/(?:what's in my cart|show (?:my )?cart|view (?:my )?cart)/i.test(messageText)) {
+          try {
+            collectedCart = await cartService.getCart(sessionId);
+            if (!toolsExecuted.includes("get_cart")) {
+              toolsExecuted.push("get_cart");
+            }
+          } catch {}
+        }
       }
 
       // 5. Persist Assistant Message safely

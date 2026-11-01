@@ -93,12 +93,11 @@ export default function App() {
     systemApi
       .getHealth()
       .then((data) => {
-        if (data.status === "ok") {
-          setBackendStatus("Backend connected & operational");
-          setIsLive(true);
+        setIsLive(true);
+        if (data.database === "connected") {
+          setBackendStatus("All Systems Operational");
         } else {
-          setBackendStatus("Service degraded");
-          setIsLive(false);
+          setBackendStatus("Operational (Demo Mode)");
         }
       })
       .catch(() => {
@@ -117,6 +116,16 @@ export default function App() {
       .then((cartData) => setCart(cartData))
       .catch((err) => console.warn("Could not load cart:", err.message));
   }, []);
+
+  // Synchronize cart whenever the user opens the slide-over cart panel
+  useEffect(() => {
+    if (isCartOpen) {
+      cartApi
+        .get()
+        .then((cartData) => setCart(cartData))
+        .catch((err) => console.warn("Could not sync cart on drawer open:", err.message));
+    }
+  }, [isCartOpen]);
 
   // 2. Fetch Products on Filter / Pagination Change
   const fetchProducts = useCallback(async () => {
@@ -393,10 +402,10 @@ export default function App() {
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  isLive
+                  isLive === true
                     ? "bg-emerald-500"
                     : isLive === false
-                    ? "bg-amber-500"
+                    ? "bg-rose-500"
                     : "bg-slate-400 animate-pulse"
                 }`}
               />

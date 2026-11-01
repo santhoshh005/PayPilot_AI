@@ -114,13 +114,13 @@ export const getCategoriesDeclaration = {
 export const addToCartDeclaration = {
   name: "add_to_cart",
   description:
-    "Add a product to the user's shopping cart by its UUID. Use this when the user says 'add to cart', 'add the first one', 'add the cheaper one', 'buy this', etc.",
+    "Add a product to the user's shopping cart. MANDATORY: You must call this tool whenever the user asks to add an item to the cart (e.g. 'add to cart', 'add the first one', 'add the cheaper one', 'i need only battery priority add that in my cart', 'buy this'). You can provide either the product UUID or the exact product name.",
   parameters: {
     type: Type.OBJECT,
     properties: {
       productId: {
         type: Type.STRING,
-        description: "The unique product UUID to add to the cart",
+        description: "The product UUID or exact product name to add to the cart (e.g. 'Noise Buds VS102' or UUID)",
       },
       quantity: {
         type: Type.NUMBER,

@@ -292,6 +292,54 @@ export class ProductService {
       count: 4,
     }));
   }
+
+  /**
+   * Resolves a product by UUID, exact name, partial model name, or brand match.
+   * Useful when AI tools pass product names instead of UUIDs.
+   */
+  async resolveProduct(identifier: string): Promise<FormattedProduct | null> {
+    if (!identifier || typeof identifier !== "string") return null;
+    const clean = identifier.trim();
+
+    // 1. Direct ID / UUID match
+    try {
+      const direct = await this.getProductById(clean);
+      if (direct) return direct;
+    } catch {
+      // Not a valid ID or not found, proceed to name matching
+    }
+
+    // 2. Fetch products to perform fuzzy and name matching
+    const catalog = await this.listProducts({ limit: 50, page: 1, sort: "rating_desc" });
+    const cleanLower = clean.toLowerCase();
+
+    // Exact name match
+    const exactName = catalog.items.find((p) => p.name.toLowerCase() === cleanLower);
+    if (exactName) return exactName;
+
+    // Substring match: product name contains identifier, or identifier contains product name
+    const subMatch = catalog.items.find(
+      (p) =>
+        p.name.toLowerCase().includes(cleanLower) ||
+        cleanLower.includes(p.name.toLowerCase())
+    );
+    if (subMatch) return subMatch;
+
+    // Word token match: all words in identifier appear in product name
+    const words = cleanLower
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length >= 2);
+    if (words.length > 0) {
+      const wordMatch = catalog.items.find((p) => {
+        const prodNameLower = p.name.toLowerCase();
+        return words.every((w) => prodNameLower.includes(w));
+      });
+      if (wordMatch) return wordMatch;
+    }
+
+    return null;
+  }
 }
 
 export const productService = new ProductService();

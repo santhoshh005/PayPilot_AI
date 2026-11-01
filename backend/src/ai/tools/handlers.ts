@@ -82,7 +82,12 @@ export async function executeToolCall(
         }
 
         try {
-          const product = await productService.getProductById(parsed.data.productId);
+          let productId = parsed.data.productId;
+          const resolved = await productService.resolveProduct(productId);
+          if (resolved) {
+            productId = resolved.id;
+          }
+          const product = await productService.getProductById(productId);
           return {
             toolName: name,
             success: true,
@@ -125,7 +130,13 @@ export async function executeToolCall(
           };
         }
 
-        const formatted = await productService.getProductsByIds(parsed.data.productIds);
+        const resolvedIds: string[] = [];
+        for (const pid of parsed.data.productIds) {
+          const resolved = await productService.resolveProduct(pid);
+          resolvedIds.push(resolved ? resolved.id : pid);
+        }
+
+        const formatted = await productService.getProductsByIds(resolvedIds);
 
         if (formatted.length < 2) {
           return {
@@ -139,7 +150,7 @@ export async function executeToolCall(
 
         // Preserve exact requested productIds order (e.g. product 1 first, product 2 second)
         const idOrderMap = new Map(
-          parsed.data.productIds.map((id, index) => [id, index])
+          resolvedIds.map((id, index) => [id, index])
         );
         formatted.sort(
           (a, b) => (idOrderMap.get(a.id) ?? 0) - (idOrderMap.get(b.id) ?? 0)
@@ -196,16 +207,22 @@ export async function executeToolCall(
         }
 
         try {
+          let targetProductId = parsed.data.productId;
+          const resolved = await productService.resolveProduct(targetProductId);
+          if (resolved) {
+            targetProductId = resolved.id;
+          }
+
           const cart = await cartService.addItem(
             sessionId,
-            parsed.data.productId,
+            targetProductId,
             parsed.data.quantity
           );
           return {
             toolName: name,
             success: true,
             result: {
-              message: "Item successfully added to cart",
+              message: `Item "${resolved?.name || targetProductId}" successfully added to cart`,
               cart: {
                 itemCount: cart.itemCount,
                 subtotal: cart.subtotal,
@@ -245,7 +262,13 @@ export async function executeToolCall(
         }
 
         try {
-          const cart = await cartService.removeItem(sessionId, parsed.data.productId);
+          let targetProductId = parsed.data.productId;
+          const resolved = await productService.resolveProduct(targetProductId);
+          if (resolved) {
+            targetProductId = resolved.id;
+          }
+
+          const cart = await cartService.removeItem(sessionId, targetProductId);
           return {
             toolName: name,
             success: true,
@@ -290,16 +313,22 @@ export async function executeToolCall(
         }
 
         try {
+          let targetProductId = parsed.data.productId;
+          const resolved = await productService.resolveProduct(targetProductId);
+          if (resolved) {
+            targetProductId = resolved.id;
+          }
+
           const cart = await cartService.updateItem(
             sessionId,
-            parsed.data.productId,
+            targetProductId,
             parsed.data.quantity
           );
           return {
             toolName: name,
             success: true,
             result: {
-              message: "Cart item quantity updated",
+              message: "Cart quantity updated successfully",
               cart: {
                 itemCount: cart.itemCount,
                 subtotal: cart.subtotal,

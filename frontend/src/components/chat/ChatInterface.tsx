@@ -12,7 +12,7 @@ import {
 import { ChatMessage as ChatMessageType } from "../../types/chat.js";
 import { Product } from "../../types/product.js";
 import { CartResponse } from "../../types/cart.js";
-import { chatApi } from "../../lib/api.js";
+import { chatApi, cartApi } from "../../lib/api.js";
 import ChatMessage from "./ChatMessage.js";
 import ChatInput from "./ChatInput.js";
 
@@ -186,6 +186,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       if (response.cart && onCartUpdated) {
         onCartUpdated(response.cart);
+      } else if (onCartUpdated && /(?:cart|added|quantity|item)/i.test(response.message)) {
+        cartApi.get().then((c) => onCartUpdated(c)).catch(() => {});
       }
 
       const assistantMessage: ChatMessageType = {

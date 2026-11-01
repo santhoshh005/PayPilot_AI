@@ -26,7 +26,7 @@ export type SearchProductsToolArgs = z.infer<typeof searchProductsToolSchema>;
  * Zod validation schema for get_product tool arguments
  */
 export const getProductToolSchema = z.object({
-  productId: z.string().uuid("productId must be a valid UUID"),
+  productId: z.string().min(1, "productId is required"),
 });
 
 export type GetProductToolArgs = z.infer<typeof getProductToolSchema>;
@@ -36,7 +36,7 @@ export type GetProductToolArgs = z.infer<typeof getProductToolSchema>;
  */
 export const compareProductsToolSchema = z.object({
   productIds: z
-    .array(z.string().uuid("Each product ID must be a valid UUID"))
+    .array(z.string().min(1, "Each product ID or name must be non-empty"))
     .min(2, "At least 2 products are required for comparison")
     .max(4, "Cannot compare more than 4 products at once"),
 });
@@ -52,7 +52,7 @@ export const getCategoriesToolSchema = z.object({});
  * Zod validation schema for add_to_cart tool arguments
  */
 export const addToCartToolSchema = z.object({
-  productId: z.string().uuid("productId must be a valid UUID"),
+  productId: z.string().min(1, "productId is required"),
   quantity: z
     .number()
     .int("Quantity must be an integer")
@@ -68,7 +68,7 @@ export type AddToCartToolArgs = z.infer<typeof addToCartToolSchema>;
  * Zod validation schema for remove_from_cart tool arguments
  */
 export const removeFromCartToolSchema = z.object({
-  productId: z.string().uuid("productId must be a valid UUID"),
+  productId: z.string().min(1, "productId is required"),
 });
 
 export type RemoveFromCartToolArgs = z.infer<typeof removeFromCartToolSchema>;
@@ -77,7 +77,7 @@ export type RemoveFromCartToolArgs = z.infer<typeof removeFromCartToolSchema>;
  * Zod validation schema for update_cart_quantity tool arguments
  */
 export const updateCartQuantityToolSchema = z.object({
-  productId: z.string().uuid("productId must be a valid UUID"),
+  productId: z.string().min(1, "productId is required"),
   quantity: z
     .number()
     .int("Quantity must be an integer")
