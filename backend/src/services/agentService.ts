@@ -2,7 +2,11 @@ import { GoogleGenAI } from "@google/genai";
 import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { env } from "../config/env.js";
-import prisma from "../lib/prisma.js";
+import prisma, {
+  isDatabaseHealthy,
+  markDatabaseOffline,
+  markDatabaseOnline,
+} from "../lib/prisma.js";
 import { FormattedProduct } from "./productService.js";
 import cartService from "./cartService.js";
 import { CartResponse } from "../schemas/cart.js";
@@ -48,20 +52,20 @@ async function safeSaveMessage(msg: {
   content: string;
   toolCalls?: StoredToolCalls;
 }): Promise<void> {
-  try {
-    await prisma.message.create({
-      data: {
-        conversationId: msg.conversationId,
-        role: msg.role,
-        content: msg.content,
-        toolCalls: msg.toolCalls as any,
-      },
-    });
-  } catch (err) {
-    console.warn(
-      "[AgentService] Failed to save message to database, saving in memory:",
-      (err as Error).message
-    );
+  if (isDatabaseHealthy()) {
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId: msg.conversationId,
+          role: msg.role,
+          content: msg.content,
+          toolCalls: msg.toolCalls as any,
+        },
+      });
+      markDatabaseOnline();
+    } catch (err) {
+      markDatabaseOffline((err as Error).message);
+    }
   }
 
   // Always keep in-memory sync for resilience
@@ -170,31 +174,38 @@ export class AgentService {
     // 1. Resolve or create active conversation for this session
     let activeConversationId = conversationId;
 
-    try {
-      let conversation = conversationId
-        ? await prisma.conversation.findFirst({
-            where: { id: conversationId, sessionId },
-          })
-        : await prisma.conversation.findFirst({
-            where: { sessionId },
-            orderBy: { createdAt: "desc" },
+    if (isDatabaseHealthy()) {
+      try {
+        let conversation = conversationId
+          ? await prisma.conversation.findFirst({
+              where: { id: conversationId, sessionId },
+            })
+          : await prisma.conversation.findFirst({
+              where: { sessionId },
+              orderBy: { createdAt: "desc" },
+            });
+
+        if (!conversation) {
+          conversation = await prisma.conversation.create({
+            data: { sessionId },
           });
+        }
 
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: { sessionId },
-        });
+        activeConversationId = conversation.id;
+        inMemoryConversations.set(sessionId, conversation.id);
+        markDatabaseOnline();
+      } catch (dbError) {
+        markDatabaseOffline((dbError as Error).message);
+        if (!activeConversationId) {
+          activeConversationId =
+            inMemoryConversations.get(sessionId) || crypto.randomUUID();
+          inMemoryConversations.set(sessionId, activeConversationId);
+        }
       }
-
-      activeConversationId = conversation.id;
-      inMemoryConversations.set(sessionId, conversation.id);
-    } catch (dbError) {
-      console.warn(
-        "[AgentService] Database offline on conversation resolution, using in-memory:",
-        (dbError as Error).message
-      );
+    } else {
       if (!activeConversationId) {
-        activeConversationId = inMemoryConversations.get(sessionId) || crypto.randomUUID();
+        activeConversationId =
+          inMemoryConversations.get(sessionId) || crypto.randomUUID();
         inMemoryConversations.set(sessionId, activeConversationId);
       }
     }
@@ -217,17 +228,22 @@ export class AgentService {
       toolCalls?: any;
     }> = [];
 
-    try {
-      historyMessages = await prisma.message.findMany({
-        where: { conversationId: activeConversationId },
-        orderBy: { createdAt: "asc" },
-        take: 15,
-      });
-    } catch (err) {
-      console.warn(
-        "[AgentService] Database error loading history, using in-memory:",
-        (err as Error).message
-      );
+    if (isDatabaseHealthy()) {
+      try {
+        const rawHistory = await prisma.message.findMany({
+          where: { conversationId: activeConversationId },
+          orderBy: { createdAt: "asc" },
+          take: 15,
+        });
+        historyMessages = rawHistory.map((m) => ({
+          role: m.role,
+          content: m.content,
+          toolCalls: m.toolCalls,
+        }));
+        markDatabaseOnline();
+      } catch (err) {
+        markDatabaseOffline((err as Error).message);
+      }
     }
 
     if (historyMessages.length === 0) {

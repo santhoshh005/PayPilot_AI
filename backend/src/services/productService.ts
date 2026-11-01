@@ -1,5 +1,9 @@
 import { Prisma } from "@prisma/client";
-import prisma from "../lib/prisma.js";
+import prisma, {
+  isDatabaseHealthy,
+  markDatabaseOffline,
+  markDatabaseOnline,
+} from "../lib/prisma.js";
 import { ListProductsQuery } from "../schemas/product.js";
 import { NotFoundError } from "../utils/errors.js";
 import {
@@ -86,6 +90,10 @@ export class ProductService {
    * with automatic in-memory catalog fallback if database is offline.
    */
   async listProducts(query: ListProductsQuery): Promise<ProductListResult> {
+    if (!isDatabaseHealthy()) {
+      return getFallbackProducts(query);
+    }
+
     try {
       const {
         search,
@@ -187,6 +195,8 @@ export class ProductService {
 
       const totalPages = Math.ceil(total / limit) || 1;
 
+      markDatabaseOnline();
+
       return {
         items: rawProducts.map(formatProduct),
         pagination: {
@@ -197,10 +207,7 @@ export class ProductService {
         },
       };
     } catch (error) {
-      console.warn(
-        "[ProductService] Database unavailable, falling back to in-memory catalog:",
-        (error as Error).message
-      );
+      markDatabaseOffline((error as Error).message);
       return getFallbackProducts(query);
     }
   }
@@ -210,19 +217,19 @@ export class ProductService {
    * Falls back to in-memory catalog if database is offline.
    */
   async getProductById(id: string): Promise<FormattedProduct> {
-    try {
-      const rawProduct = await prisma.product.findUnique({
-        where: { id },
-      });
+    if (isDatabaseHealthy()) {
+      try {
+        const rawProduct = await prisma.product.findUnique({
+          where: { id },
+        });
 
-      if (rawProduct) {
-        return formatProduct(rawProduct);
+        if (rawProduct) {
+          markDatabaseOnline();
+          return formatProduct(rawProduct);
+        }
+      } catch (error) {
+        markDatabaseOffline((error as Error).message);
       }
-    } catch (error) {
-      console.warn(
-        `[ProductService] Database query failed for ID "${id}", checking fallback catalog:`,
-        (error as Error).message
-      );
     }
 
     const fallback = getFallbackProductById(id);
@@ -237,19 +244,19 @@ export class ProductService {
    * Retrieves multiple products by IDs, with fallback support.
    */
   async getProductsByIds(ids: string[]): Promise<FormattedProduct[]> {
-    try {
-      const rawProducts = await prisma.product.findMany({
-        where: { id: { in: ids } },
-      });
+    if (isDatabaseHealthy()) {
+      try {
+        const rawProducts = await prisma.product.findMany({
+          where: { id: { in: ids } },
+        });
 
-      if (rawProducts.length > 0) {
-        return rawProducts.map(formatProduct);
+        if (rawProducts.length > 0) {
+          markDatabaseOnline();
+          return rawProducts.map(formatProduct);
+        }
+      } catch (error) {
+        markDatabaseOffline((error as Error).message);
       }
-    } catch (error) {
-      console.warn(
-        "[ProductService] Database query failed for getProductsByIds:",
-        (error as Error).message
-      );
     }
 
     return getFallbackProductsByIds(ids);
@@ -259,24 +266,24 @@ export class ProductService {
    * Retrieves available product categories with product counts for filter controls.
    */
   async getCategories(): Promise<Array<{ category: string; count: number }>> {
-    try {
-      const grouped = await prisma.product.groupBy({
-        by: ["category"],
-        _count: { id: true },
-        orderBy: { category: "asc" },
-      });
+    if (isDatabaseHealthy()) {
+      try {
+        const grouped = await prisma.product.groupBy({
+          by: ["category"],
+          _count: { id: true },
+          orderBy: { category: "asc" },
+        });
 
-      if (grouped.length > 0) {
-        return grouped.map((g) => ({
-          category: g.category,
-          count: g._count.id,
-        }));
+        if (grouped.length > 0) {
+          markDatabaseOnline();
+          return grouped.map((g) => ({
+            category: g.category,
+            count: g._count.id,
+          }));
+        }
+      } catch (error) {
+        markDatabaseOffline((error as Error).message);
       }
-    } catch (error) {
-      console.warn(
-        "[ProductService] Database query failed for getCategories, using fallback catalog:",
-        (error as Error).message
-      );
     }
 
     const fallbackCats = getFallbackCategories();

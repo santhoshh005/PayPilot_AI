@@ -1,5 +1,9 @@
 import { Router, Request, Response } from "express";
-import prisma from "../lib/prisma.js";
+import prisma, {
+  isDatabaseHealthy,
+  markDatabaseOffline,
+  markDatabaseOnline,
+} from "../lib/prisma.js";
 import { env } from "../config/env.js";
 import { ApiResponse, HealthStatus } from "../types/index.js";
 
@@ -8,22 +12,30 @@ const router = Router();
 /**
  * GET /api/health
  * Fast health check endpoint verifying process uptime and PostgreSQL connectivity.
- * Times out database probe within 2 seconds to prevent Render health-check hangs.
+ * Uses a circuit breaker to avoid 2-second timeout hangs when database is offline.
  */
 router.get("/", async (_req: Request, res: Response) => {
   let dbStatus: "connected" | "disconnected" = "connected";
 
-  try {
-    // Ultra-lightweight ping with 2-second timeout guard
-    const pingPromise = prisma.$queryRaw`SELECT 1;`;
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Database ping timed out after 2000ms")), 2000)
-    );
-
-    await Promise.race([pingPromise, timeoutPromise]);
-  } catch (error) {
+  if (!isDatabaseHealthy()) {
     dbStatus = "disconnected";
-    console.warn("[Health] Database ping failed or timed out:", (error as Error).message);
+  } else {
+    try {
+      // Lightweight ping with 1.5-second timeout guard
+      const pingPromise = prisma.$queryRaw`SELECT 1;`;
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Database ping timed out after 1500ms")),
+          1500
+        )
+      );
+
+      await Promise.race([pingPromise, timeoutPromise]);
+      markDatabaseOnline();
+    } catch (error) {
+      dbStatus = "disconnected";
+      markDatabaseOffline((error as Error).message);
+    }
   }
 
   const overallStatus = dbStatus === "connected" ? "ok" : "degraded";
