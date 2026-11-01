@@ -105,6 +105,7 @@ export const chatApi = {
       role: "USER" | "ASSISTANT";
       content: string;
       createdAt: string;
+      toolCalls?: any;
     }>;
   }> {
     const res = await apiClient.get<{
@@ -116,6 +117,7 @@ export const chatApi = {
           role: "USER" | "ASSISTANT";
           content: string;
           createdAt: string;
+          toolCalls?: any;
         }>;
       };
     }>("/chat/history", {

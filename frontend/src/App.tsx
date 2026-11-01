@@ -408,37 +408,37 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === "chat" ? (
-          /* TAB 1: AI Assistant Conversational Interface */
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-3xl border border-blue-100">
-              <div>
-                <div className="inline-flex items-center gap-1.5 text-blue-700 text-xs font-bold uppercase tracking-wider mb-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Agentic Commerce Ready</span>
-                </div>
-                <h2 className="text-xl font-extrabold text-slate-900">
-                  Shop & Manage Cart by Natural Language
-                </h2>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  Describe what you need — PayPilot finds products, compares specifications, and mutates your cart with server-authoritative totals.
-                </p>
+        {/* TAB 1: AI Assistant Conversational Interface (Kept mounted to preserve chat history, state, and scroll) */}
+        <div className={activeTab === "chat" ? "max-w-4xl mx-auto space-y-6" : "hidden"}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-3xl border border-blue-100">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-blue-700 text-xs font-bold uppercase tracking-wider mb-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Agentic Commerce Ready</span>
               </div>
-
-              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-white/80 px-3.5 py-2 rounded-xl border border-emerald-200 shrink-0 self-start sm:self-auto">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Zero Hallucination Guarantee</span>
-              </div>
+              <h2 className="text-xl font-extrabold text-slate-900">
+                Shop & Manage Cart by Natural Language
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Describe what you need — PayPilot finds products, compares specifications, and mutates your cart with server-authoritative totals.
+              </p>
             </div>
 
-            <ChatInterface
-              onSelectProduct={(p) => setSelectedProduct(p)}
-              onCartUpdated={(newCart) => setCart(newCart)}
-              onAddToCart={(p, qty) => handleAddToCart(p, qty || 1)}
-            />
+            <div className="flex items-center gap-2 text-xs text-emerald-700 bg-white/80 px-3.5 py-2 rounded-xl border border-emerald-200 shrink-0 self-start sm:self-auto">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Zero Hallucination Guarantee</span>
+            </div>
           </div>
-        ) : activeTab === "catalog" ? (
-          /* TAB 2: Direct Product Catalog Explorer */
+
+          <ChatInterface
+            onSelectProduct={(p) => setSelectedProduct(p)}
+            onCartUpdated={(newCart) => setCart(newCart)}
+            onAddToCart={(p, qty) => handleAddToCart(p, qty || 1)}
+          />
+        </div>
+
+        {/* TAB 2: Direct Product Catalog Explorer */}
+        {activeTab === "catalog" && (
           <div className="space-y-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
               <div>
@@ -507,16 +507,20 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : activeTab === "orders" ? (
-          /* TAB 3: Session Orders & History */
+        )}
+
+        {/* TAB 3: Session Orders & History */}
+        {activeTab === "orders" && (
           <div className="max-w-4xl mx-auto">
             <OrdersList
               onExploreCatalog={() => setActiveTab("catalog")}
               onOpenChat={() => setActiveTab("chat")}
             />
           </div>
-        ) : (
-          /* TAB 4: Growth Dashboard & Business Insights */
+        )}
+
+        {/* TAB 4: Growth Dashboard & Business Insights */}
+        {activeTab === "dashboard" && (
           <div className="max-w-5xl mx-auto">
             <Dashboard />
           </div>

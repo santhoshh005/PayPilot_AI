@@ -61,31 +61,18 @@ export async function sessionMiddleware(
           "[SessionMiddleware] Database offline, checking in-memory session:",
           (dbError as Error).message
         );
+        // If DB is offline, check in-memory store for previously saved session
+        const memSession = inMemorySessions.get(validSessionId);
+        if (memSession) {
+          req.sessionId = memSession.id;
+          req.sessionRecord = memSession;
+          res.setHeader(SESSION_HEADER, memSession.id);
+          return next();
+        }
       }
-
-      // Check in-memory store
-      const memSession = inMemorySessions.get(validSessionId);
-      if (memSession) {
-        req.sessionId = memSession.id;
-        req.sessionRecord = memSession;
-        res.setHeader(SESSION_HEADER, memSession.id);
-        return next();
-      }
-
-      // Provided valid UUID not in DB or memory; create it in memory
-      const fallbackSession = {
-        id: validSessionId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      inMemorySessions.set(validSessionId, fallbackSession);
-      req.sessionId = fallbackSession.id;
-      req.sessionRecord = fallbackSession;
-      res.setHeader(SESSION_HEADER, fallbackSession.id);
-      return next();
     }
 
-    // 2. No session provided -> Attempt to create new anonymous Session in PostgreSQL
+    // 2. No valid existing session found -> Provision new anonymous Session in PostgreSQL (or memory if offline)
     try {
       const newSession = await prisma.session.create({
         data: {},

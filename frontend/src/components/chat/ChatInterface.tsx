@@ -49,20 +49,42 @@ const STARTER_PROMPTS = [
   },
 ];
 
+const SESSION_CHAT_MESSAGES_KEY = "paypilot_chat_messages";
+const SESSION_CONVERSATION_ID_KEY = "paypilot_conversation_id";
+
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSelectProduct,
   onCartUpdated,
   onAddToCart,
 }) => {
-  const [messages, setMessages] = useState<ChatMessageType[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "👋 Welcome to PayPilot AI! I'm your agentic commerce shopping assistant.\n\nTell me what you're looking for in natural language, ask to compare products, or tell me to add items to your cart.",
-    },
-  ]);
-  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [messages, setMessages] = useState<ChatMessageType[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_CHAT_MESSAGES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to read chat history from sessionStorage:", e);
+    }
+    return [
+      {
+        id: "welcome",
+        role: "assistant",
+        content:
+          "👋 Welcome to PayPilot AI! I'm your agentic commerce shopping assistant.\n\nTell me what you're looking for in natural language, ask to compare products, or tell me to add items to your cart.",
+      },
+    ];
+  });
+  const [conversationId, setConversationId] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem(SESSION_CONVERSATION_ID_KEY) || undefined;
+    } catch {
+      return undefined;
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
@@ -76,6 +98,66 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Synchronize messages with sessionStorage so chat is preserved across navigation & tab refreshes
+  useEffect(() => {
+    try {
+      if (messages.length > 0) {
+        sessionStorage.setItem(SESSION_CHAT_MESSAGES_KEY, JSON.stringify(messages));
+      } else {
+        sessionStorage.removeItem(SESSION_CHAT_MESSAGES_KEY);
+      }
+    } catch (e) {
+      console.warn("Failed to persist messages to sessionStorage:", e);
+    }
+  }, [messages]);
+
+  // Synchronize conversationId with sessionStorage
+  useEffect(() => {
+    try {
+      if (conversationId) {
+        sessionStorage.setItem(SESSION_CONVERSATION_ID_KEY, conversationId);
+      } else {
+        sessionStorage.removeItem(SESSION_CONVERSATION_ID_KEY);
+      }
+    } catch (e) {
+      console.warn("Failed to persist conversationId to sessionStorage:", e);
+    }
+  }, [conversationId]);
+
+  // Initial mount: if sessionStorage was empty, attempt to hydrate active session from backend
+  useEffect(() => {
+    if (messages.length === 1 && messages[0].id === "welcome") {
+      let isMounted = true;
+      chatApi
+        .getHistory(conversationId)
+        .then((res) => {
+          if (!isMounted) return;
+          if (res && res.messages && res.messages.length > 0) {
+            const formatted: ChatMessageType[] = res.messages.map((m: any) => ({
+              id: m.id || String(Date.now()),
+              role: (m.role?.toLowerCase() === "user" ? "user" : "assistant") as "user" | "assistant",
+              content: m.content,
+              products: m.toolCalls?.products,
+              comparison: m.toolCalls?.comparison,
+              cart: m.toolCalls?.cart,
+              createdAt: m.createdAt,
+            }));
+            setMessages(formatted);
+            if (res.conversationId) {
+              setConversationId(res.conversationId);
+            }
+          }
+        })
+        .catch((err) => {
+          console.debug("No server conversation history to hydrate:", err);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, []);
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -130,6 +212,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   const handleClearConversation = () => {
+    try {
+      sessionStorage.removeItem(SESSION_CHAT_MESSAGES_KEY);
+      sessionStorage.removeItem(SESSION_CONVERSATION_ID_KEY);
+    } catch (e) {
+      console.warn("Failed to clear chat sessionStorage:", e);
+    }
     setMessages([
       {
         id: "welcome",
