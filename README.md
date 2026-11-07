@@ -31,10 +31,11 @@
 - 🛒 **Conversational Cart Management**: Add, update, view, and remove cart items directly via chat or the interactive slide-over cart drawer.
 - 💳 **Razorpay Standard Checkout**: Seamless checkout flow generating server-side Razorpay orders with paise conversion.
 - 🔐 **Server-Side Cryptographic Verification**: Tamper-proof HMAC-SHA256 signature verification (`crypto.timingSafeEqual`) guaranteeing payment authenticity.
-- ⚡ **Razorpay Webhooks & Lifecycle**: Asynchronous handling of `payment.captured` and `payment.failed` with idempotent `WebhookEvent` logging.
+- ⚡ **Razorpay Webhooks & Lifecycle**: Asynchronous handling of `payment.captured` and `payment.failed` with idempotent `WebhookEvent` logging. A `PAID` order is never downgraded, and a `FAILED` order recovers to `PAID` when the customer retries payment on the same Razorpay order and it succeeds.
 - 📦 **Order Management & History**: Server-authenticated order tracking, line items with historical price snapshots, and payment status badges.
 - 📊 **Growth Dashboard & Business Analytics**: Real-time sales telemetry, gross revenue, paid order volume, average order value (AOV), top products, and conversion rates.
-- 🛡️ **Session Isolation & Security**: Anonymous cookie-based session management (`paypilot_session`) with strict IDOR protection and rate limiting.
+- 🛡️ **Session Isolation & Security**: Anonymous sessions identified by an `X-Session-Id` header (UUID, stored in the browser's `localStorage`), with per-session ownership checks on carts, orders and conversations, plus global and per-endpoint rate limiting.
+- 🔌 **Offline Resilience**: If the database is unreachable, a circuit breaker switches catalog, cart, session and chat to bounded in-memory fallbacks instead of failing requests. Checkout and payment still need the database.
 
 ---
 
@@ -43,7 +44,7 @@
 ```mermaid
 graph TD
     User([Shopper / User]) -->|Browser| Frontend[Vercel: React + Vite SPA]
-    Frontend -->|REST API + Cookies| Backend[Render: Express + TypeScript API]
+    Frontend -->|REST API + X-Session-Id header| Backend[Render: Express + TypeScript API]
     Backend -->|Function Calling| Gemini[Google Gemini 2.5 Flash]
     Backend -->|Prisma ORM / pgBouncer :6543| Supabase[(Supabase PostgreSQL)]
     Frontend -->|Standard Checkout JS| Razorpay[Razorpay Gateway]
@@ -78,7 +79,8 @@ Razorpay/
 │   │   ├── routes/           # REST API endpoints
 │   │   ├── schemas/          # Zod request/response validation schemas
 │   │   ├── services/         # Business logic, Prisma transactions, Razorpay service
-│   │   ├── utils/            # Money utilities, custom error types
+│   │   ├── utils/            # Money utilities, custom error types, bounded in-memory map
+│   │   ├── __tests__/        # Vitest + Supertest suites
 │   │   └── index.ts          # Express server entry point
 │   ├── tsconfig.json
 │   └── package.json
@@ -96,7 +98,6 @@ Razorpay/
 │   ├── schema.prisma         # Prisma data model
 │   └── seed.ts               # Demo catalog seed script
 ├── DEPLOYMENT.md             # Complete step-by-step production deployment guide
-├── walkthrough.md            # Verification results and test suites audit
 ├── render.yaml               # Render Infrastructure-as-Code Blueprint
 └── README.md
 ```
@@ -134,8 +135,8 @@ Razorpay/
 ## 🚦 Local Development Setup
 
 ### 1. Prerequisites
-- Node.js >= 18.0.0
-- npm >= 9.0.0
+- Node.js >= 20
+- npm >= 10
 - PostgreSQL database instance or Supabase project
 
 ### 2. Clone & Install
@@ -144,17 +145,19 @@ git clone https://github.com/santhoshh005/PayPilot_AI.git
 cd PayPilot_AI
 
 # Install backend dependencies
-cd backend && npm install
+cd backend && npm ci
 
 # Install frontend dependencies
-cd ../frontend && npm install
+cd ../frontend && npm ci
 ```
+
+Copy `backend/.env.example` to `backend/.env` and `frontend/.env.example` to `frontend/.env`, then fill in your own values.
 
 ### 3. Database Migration & Seed
 ```bash
 cd backend
 npx prisma migrate dev --schema="../prisma/schema.prisma"
-npx ts-node ../prisma/seed.ts
+npx tsx ../prisma/seed.ts
 ```
 
 ### 4. Run Locally
@@ -171,16 +174,20 @@ Open `http://localhost:5173` in your browser.
 
 ## 🧪 Testing & Quality Assurance
 
-The codebase includes a comprehensive 13-suite automated test suite covering all security, payment verification, session isolation, and regression scenarios:
+The backend has 14 Vitest + Supertest suites covering security, payment verification, webhooks, session isolation, offline fallback and regressions. Most suites need a reachable database (`DATABASE_URL`).
 
 ```bash
 cd backend
 npm test
+
+# Frontend type check + production build
+cd ../frontend
+npm run build
 ```
 
-**Results**:
-- **13/13 Test Suites Passing**
-- **176/176 Unit, Integration & Security Tests Passing**
+**Latest results**:
+- **14/14 test suites passing**
+- **184/184 unit, integration and security tests passing**
 - Strict timing-safe HMAC-SHA256 signature verification verified
 - Webhook duplicate idempotency verified
 - Anonymous session isolation & IDOR prevention verified
