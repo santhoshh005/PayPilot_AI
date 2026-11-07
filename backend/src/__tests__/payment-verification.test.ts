@@ -368,7 +368,7 @@ describe("Phase 8: Server-Side Razorpay Payment Verification", { timeout: 25000 
       expect(conflictRes.body.error.code).toBe("CONFLICT");
     });
 
-    it("14. should reject verification if internal order is marked FAILED", async () => {
+    it("14. should recover a FAILED order to PAID when a retried payment has a valid signature", async () => {
       const sessionRes = await request(app).get("/api/session");
       const sessionId = sessionRes.body.data.sessionId;
 
@@ -395,8 +395,9 @@ describe("Phase 8: Server-Side Razorpay Payment Verification", { timeout: 25000 
           razorpay_signature: signature,
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error.message).toContain("Order has failed");
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe("PAID");
+      expect(res.body.data.razorpayPaymentId).toBe(paymentId);
     });
 
     it("17 & 18. should NEVER return RAZORPAY_KEY_SECRET or expected HMAC in response", async () => {

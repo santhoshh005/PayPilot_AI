@@ -4,6 +4,7 @@ import prisma, {
   markDatabaseOnline,
 } from "../lib/prisma.js";
 import productService from "./productService.js";
+import { BoundedMap } from "../utils/boundedMap.js";
 import { CartResponse, CartItemResponse } from "../schemas/cart.js";
 import {
   NotFoundError,
@@ -13,7 +14,7 @@ import {
 const MAX_QUANTITY_PER_ITEM = 10;
 
 // In-memory cart store for offline resilience when database is unreachable
-const inMemoryCarts = new Map<string, Array<{ productId: string; quantity: number }>>();
+const inMemoryCarts = new BoundedMap<string, Array<{ productId: string; quantity: number }>>(10000);
 
 export class CartService {
   /**

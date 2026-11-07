@@ -57,13 +57,10 @@ export class PaymentService {
       );
     }
 
-    if (order.status === "FAILED") {
-      throw new ValidationError(
-        "Order has failed and cannot be verified as paid."
-      );
-    }
-
-    if (order.status !== "PENDING") {
+    // FAILED is recoverable: Razorpay allows multiple payment attempts per order, so an
+    // earlier failed attempt (payment.failed webhook) can be followed by a successful one.
+    // A valid signature below proves this payment succeeded for this order.
+    if (order.status !== "PENDING" && order.status !== "FAILED") {
       throw new ValidationError(
         `Order status "${order.status}" cannot be transitioned to PAID.`
       );
@@ -87,15 +84,29 @@ export class PaymentService {
 
     const finalizedOrder = await prisma.$transaction(
       async (tx) => {
-        // Step A: Update Order status to PAID
-        const updated = await tx.order.update({
-          where: { id: order.id },
+        // Step A: Update Order status to PAID (conditional, so a concurrent
+        // webhook/verify that already finalized the order is never overwritten)
+        const { count } = await tx.order.updateMany({
+          where: { id: order.id, status: { not: "PAID" } },
           data: {
             status: "PAID",
             razorpayPaymentId: razorpay_payment_id,
             paidAt: paidAtTimestamp,
           },
         });
+
+        const updated = await tx.order.findUniqueOrThrow({
+          where: { id: order.id },
+        });
+
+        if (count === 0) {
+          if (updated.razorpayPaymentId === razorpay_payment_id) {
+            return updated;
+          }
+          throw new ConflictError(
+            "Order has already been finalized with a different payment record."
+          );
+        }
 
         // Step B: Clear cart belonging to the current session
         const userCart = await tx.cart.findUnique({

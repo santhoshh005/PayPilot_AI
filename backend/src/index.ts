@@ -8,14 +8,22 @@ import { sessionMiddleware } from "./middleware/session.js";
 import apiRouter from "./routes/index.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { ForbiddenError } from "./utils/errors.js";
 
 const app = express();
+
+// Behind Render's proxy: trust one hop so rate limiting keys on the real client IP
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
 
 // 1. Basic Security Headers (lightweight, zero-dep)
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
   next();
 });
 
@@ -44,7 +52,7 @@ app.use(
       ) {
         return callback(null, true);
       }
-      return callback(new Error(`CORS policy does not allow access from ${origin}`));
+      return callback(new ForbiddenError("Origin not allowed by CORS policy"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -56,7 +64,7 @@ app.use(
 // 3. Body Parsers with Safe Size Limits & Raw Webhook Buffer Preservation
 app.use(
   "/api/payment/webhook",
-  express.raw({ type: "*/*", limit: "5mb" }),
+  express.raw({ type: "*/*", limit: "1mb" }),
   (req, _res, next) => {
     if (Buffer.isBuffer(req.body)) {
       req.rawBody = req.body;
@@ -67,20 +75,21 @@ app.use(
 
 app.use(
   express.json({
-    limit: "5mb",
+    limit: "1mb",
     verify: (req: any, _res, buf) => {
       req.rawBody = buf;
     },
   })
 );
-app.use(express.urlencoded({ extended: true, limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // 4. Request Logging
 app.use(requestLogger);
 
-// 5. Rate Limiting (In-memory, bypasses in test environment)
+// 5. Rate Limiting (In-memory, bypasses in test environment).
+// Applied globally because the API router is also mounted at the root path below.
 if (env.NODE_ENV !== "test") {
-  app.use("/api", generalLimiter);
+  app.use(generalLimiter);
 }
 
 // 6. Root Informational Endpoint

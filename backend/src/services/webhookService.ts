@@ -104,7 +104,27 @@ export class WebhookService {
       };
     }
 
-    // 6. Handle Supported Events
+    // 6. Handle Supported Events. A concurrent delivery of the same event can pass the
+    // idempotency check above and then hit the unique constraint; treat that as a duplicate.
+    try {
+      return await this.dispatchEvent(eventId, eventType, eventPayload);
+    } catch (error) {
+      if ((error as { code?: string })?.code === "P2002") {
+        return {
+          success: true,
+          message: "Webhook event already processed.",
+          duplicate: true,
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async dispatchEvent(
+    eventId: string,
+    eventType: string,
+    eventPayload: any
+  ): Promise<WebhookProcessingResult> {
     switch (eventType) {
       case "payment.captured":
         return await this.handlePaymentCaptured(eventId, eventPayload);
@@ -198,25 +218,9 @@ export class WebhookService {
       };
     }
 
-    // If order was marked FAILED previously, do not corrupt state
-    if (order.status === "FAILED") {
-      await prisma.webhookEvent.create({
-        data: {
-          razorpayEventId: eventId,
-          eventType: "payment.captured",
-          orderId: order.id,
-          payload,
-        },
-      });
-      return {
-        success: true,
-        message: "Order was marked FAILED. payment.captured recorded without state overwrite.",
-        orderId: order.id,
-        ignored: true,
-      };
-    }
-
-    // Monotonic transition: PENDING -> PAID inside an atomic transaction
+    // Transition PENDING or FAILED -> PAID inside an atomic transaction.
+    // FAILED is recoverable because Razorpay allows retrying payment on the same order:
+    // a captured payment means the customer was charged and the order must be PAID.
     const paidAtDate = paymentEntity?.created_at
       ? new Date(paymentEntity.created_at * 1000)
       : new Date();
@@ -337,11 +341,15 @@ export class WebhookService {
     // Monotonic transition: PENDING -> FAILED. Cart remains intact!
     const failedOrder = await prisma.$transaction(
       async (tx) => {
-        const updated = await tx.order.update({
-          where: { id: order.id },
+        // Conditional update: a concurrent payment.captured/verify that already set PAID wins
+        await tx.order.updateMany({
+          where: { id: order.id, status: "PENDING" },
           data: {
             status: "FAILED",
           },
+        });
+        const updated = await tx.order.findUniqueOrThrow({
+          where: { id: order.id },
         });
 
         await tx.webhookEvent.create({

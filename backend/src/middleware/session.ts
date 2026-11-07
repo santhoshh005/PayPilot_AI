@@ -6,16 +6,17 @@ import prisma, {
   markDatabaseOffline,
   markDatabaseOnline,
 } from "../lib/prisma.js";
+import { BoundedMap } from "../utils/boundedMap.js";
 
 const uuidSchema = z.string().uuid();
 
 export const SESSION_HEADER = "x-session-id";
 
 // In-memory fallback session store when database is offline or sleeping
-const inMemorySessions = new Map<
+const inMemorySessions = new BoundedMap<
   string,
   { id: string; createdAt: Date; updatedAt: Date }
->();
+>(10000);
 
 /**
  * Anonymous Session Resolution Middleware.

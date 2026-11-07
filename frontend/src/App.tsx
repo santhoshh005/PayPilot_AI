@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import {
   Bot,
   Package,
@@ -39,7 +39,8 @@ import ProductDetailModal from "./components/products/ProductDetailModal.js";
 import ChatInterface from "./components/chat/ChatInterface.js";
 import CartPanel from "./components/cart/CartPanel.js";
 import OrdersList from "./components/orders/OrdersList.js";
-import Dashboard from "./components/dashboard/Dashboard.js";
+// Lazy-loaded: the dashboard pulls in recharts (~100 KB gzip), not needed on first paint
+const Dashboard = lazy(() => import("./components/dashboard/Dashboard.js"));
 
 export default function App() {
   // Navigation State: AI Chat, Catalog, Orders, or Growth Dashboard
@@ -128,29 +129,38 @@ export default function App() {
   }, [isCartOpen]);
 
   // 2. Fetch Products on Filter / Pagination Change
+  // Monotonic request id: ignore responses from superseded requests (fast typing / filter changes)
+  const latestProductRequest = useRef(0);
+
   const fetchProducts = useCallback(async () => {
+    const requestId = ++latestProductRequest.current;
     setIsLoading(true);
     setError(null);
     try {
       const data = await productsApi.list(filters);
+      if (requestId !== latestProductRequest.current) return;
       setProducts(data.items);
       setPagination(data.pagination);
     } catch (err: any) {
+      if (requestId !== latestProductRequest.current) return;
       console.error("Failed to load products:", err);
       setError(
         err.response?.data?.error?.message ||
           "Unable to load product catalog. Please verify backend connectivity."
       );
     } finally {
-      setIsLoading(false);
+      if (requestId === latestProductRequest.current) {
+        setIsLoading(false);
+      }
     }
   }, [filters]);
 
   useEffect(() => {
-    if (activeTab === "catalog") {
-      fetchProducts();
-    }
-  }, [activeTab, fetchProducts]);
+    if (activeTab !== "catalog") return;
+    // Debounce so each search keystroke doesn't fire a request (and burn the rate limit)
+    const timer = setTimeout(fetchProducts, filters.search ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [activeTab, fetchProducts, filters.search]);
 
   const handleFilterChange = (newFilters: ProductFilterParams) => {
     setFilters(newFilters);
@@ -193,6 +203,7 @@ export default function App() {
       setCart(updatedCart);
     } catch (err: any) {
       console.error("Failed to update cart:", err);
+      alert(err.response?.data?.error?.message || "Failed to update item quantity");
     } finally {
       setIsCartLoading(false);
     }
@@ -205,6 +216,7 @@ export default function App() {
       setCart(updatedCart);
     } catch (err: any) {
       console.error("Failed to remove item:", err);
+      alert(err.response?.data?.error?.message || "Failed to remove item from cart");
     } finally {
       setIsCartLoading(false);
     }
@@ -531,7 +543,15 @@ export default function App() {
         {/* TAB 4: Growth Dashboard & Business Insights */}
         {activeTab === "dashboard" && (
           <div className="max-w-5xl mx-auto">
-            <Dashboard />
+            <Suspense
+              fallback={
+                <div className="py-24 text-center text-sm text-slate-500" role="status">
+                  Loading dashboard…
+                </div>
+              }
+            >
+              <Dashboard />
+            </Suspense>
           </div>
         )}
       </main>

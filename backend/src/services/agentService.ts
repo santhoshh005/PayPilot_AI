@@ -13,6 +13,7 @@ import { CartResponse } from "../schemas/cart.js";
 import { ALL_AGENT_TOOLS } from "../ai/tools/definitions.js";
 import { executeToolCall } from "../ai/tools/handlers.js";
 import PAYPILOT_SYSTEM_PROMPT from "../ai/systemPrompt.js";
+import { BoundedMap } from "../utils/boundedMap.js";
 
 export interface AgentChatResponse {
   message: string;
@@ -40,8 +41,19 @@ interface InMemoryMessageRecord {
 }
 
 // In-memory conversation & message store when database is unreachable
-const inMemoryConversations = new Map<string, string>(); // sessionId -> conversationId
-const inMemoryMessages = new Map<string, InMemoryMessageRecord[]>(); // conversationId -> messages
+// Bounded so the always-on mirror below cannot leak memory in long-running processes.
+const MAX_IN_MEMORY_CONVERSATIONS = 2000;
+const MAX_IN_MEMORY_MESSAGES_PER_CONVERSATION = 30;
+const inMemoryConversations = new BoundedMap<string, string>(MAX_IN_MEMORY_CONVERSATIONS); // sessionId -> conversationId
+const inMemoryMessages = new BoundedMap<string, InMemoryMessageRecord[]>(MAX_IN_MEMORY_CONVERSATIONS); // conversationId -> messages
+const conversationOwners = new BoundedMap<string, string>(MAX_IN_MEMORY_CONVERSATIONS); // conversationId -> sessionId
+
+function claimConversation(conversationId: string, sessionId: string): boolean {
+  const owner = conversationOwners.get(conversationId);
+  if (owner && owner !== sessionId) return false;
+  conversationOwners.set(conversationId, sessionId);
+  return true;
+}
 
 /**
  * Safely persists a message to PostgreSQL with automatic in-memory fallback.
@@ -78,7 +90,10 @@ async function safeSaveMessage(msg: {
     toolCalls: msg.toolCalls,
     createdAt: new Date(),
   });
-  inMemoryMessages.set(msg.conversationId, list);
+  inMemoryMessages.set(
+    msg.conversationId,
+    list.slice(-MAX_IN_MEMORY_MESSAGES_PER_CONVERSATION)
+  );
 }
 
 /**
@@ -210,8 +225,11 @@ export class AgentService {
       }
     }
 
-    if (!activeConversationId) {
+    // Never let a session attach to (and read) another session's in-memory conversation
+    if (!activeConversationId || !claimConversation(activeConversationId, sessionId)) {
       activeConversationId = crypto.randomUUID();
+      claimConversation(activeConversationId, sessionId);
+      inMemoryConversations.set(sessionId, activeConversationId);
     }
 
     // 2. Persist incoming User Message safely
@@ -230,12 +248,13 @@ export class AgentService {
 
     if (isDatabaseHealthy()) {
       try {
+        // Latest 15 messages (fetched newest-first, then restored to chronological order)
         const rawHistory = await prisma.message.findMany({
           where: { conversationId: activeConversationId },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
           take: 15,
         });
-        historyMessages = rawHistory.map((m) => ({
+        historyMessages = rawHistory.reverse().map((m) => ({
           role: m.role,
           content: m.content,
           toolCalls: m.toolCalls,
@@ -1040,7 +1059,7 @@ export function getInMemoryHistory(
   conversationId?: string
 ): { conversationId: string | null; messages: any[] } {
   const convId = conversationId || inMemoryConversations.get(sessionId);
-  if (!convId) {
+  if (!convId || conversationOwners.get(convId) !== sessionId) {
     return { conversationId: null, messages: [] };
   }
   const messages = inMemoryMessages.get(convId) || [];

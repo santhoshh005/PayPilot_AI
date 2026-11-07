@@ -633,7 +633,7 @@ describe("Phase 13: Comprehensive QA, Security & Regression Suite", { timeout: 6
       expect(resNonexistent.status).toBe(404);
     });
 
-    it("should reject verification if internal order is in FAILED status", async () => {
+    it("should accept a valid retried payment for an order in FAILED status", async () => {
       const sessionRes = await request(app).get("/api/session");
       const sessionId = sessionRes.body.data.sessionId;
 
@@ -657,8 +657,8 @@ describe("Phase 13: Comprehensive QA, Security & Regression Suite", { timeout: 6
           razorpay_payment_id: paymentId,
           razorpay_signature: sig,
         });
-      expect(res.status).toBe(400);
-      expect(res.body.error.message).toContain("failed");
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe("PAID");
 
       // Cleanup
       await prisma.order.delete({ where: { id: failedOrder.id } });
